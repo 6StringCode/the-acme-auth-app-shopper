@@ -1,28 +1,9 @@
-const Sequelize = require('sequelize'); //we'll move this out later
-const config = {}; 
-if(process.env.QUIET){
-    config.logging = false;
-}
-const conn = new Sequelize(process.env.DATABASE_URL || 'postgres://localhost/acme_auth_db', config);
+const conn = require('./conn');
+const { Sequelize } = conn;
+
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 
-const Order = conn.define('order', {
-    isCart: {
-        type: Sequelize.BOOLEAN,
-        defaultValue: true
-    }
-});
-
-const LineItem = conn.define('lineItem', {
-    quantity: {
-        type: Sequelize.INTEGER,
-        defaultValue: 1,
-        validate: {
-            min: 1
-        }
-    }
-});
 
 const User = conn.define('user', {
     username: {
@@ -32,16 +13,6 @@ const User = conn.define('user', {
         type: Sequelize.STRING
     }
 });
-
-const Product = conn.define('product', {
-    name: {
-        type: Sequelize.STRING
-    }
-})
-
-User.hasMany(Order); //1 to many - UserId on Order
-Order.hasMany(LineItem); //1 to many - OrderId on LineItem
-LineItem.belongsTo(Product); //1 to 1 - LineItem gets a ProductId
 
 User.addHook('beforeSave', async(user)=> {
     user.password = await bcrypt.hash(user.password, 5); //5 is # of salt rounds
@@ -55,7 +26,9 @@ User.prototype.createOrderFromCart = async function(){
 
 User.prototype.addToCart = async function({ product, quantity }){
     const cart = await this.getCart(); //gets cart and thus Order.id => turns it into cart.id
-    let lineItem = await LineItem.findOne({
+    //let lineItem = await LineItem.findOne({
+    //after separating out the models, we can access the conn.model like below
+    let lineItem = await conn.models.lineItem.findOne({
         where: {
             productId: product.id,
             orderId: cart.id
@@ -71,27 +44,27 @@ User.prototype.addToCart = async function({ product, quantity }){
         }
     }
     else {
-        await LineItem.create({ productId: product.id, quantity, orderId: cart.id });
+        await conn.models.lineItem.create({ productId: product.id, quantity, orderId: cart.id });
     }
     return this.getCart();
 }
 
 //this finds an Order/Cart that matches the UserId fk to the User(this).id
 User.prototype.getCart = async function(){
-    let order = await Order.findOne({
+    let order = await conn.models.order.findOne({
         where: {
             userId: this.id, //instance method can just use this
             isCart: true
         },
         include: [
-            LineItem
+            conn.models.lineItem
         ]
     });
     //if there's not cart/order, create one setting the fk userId to this.id
     if(!order){
-        order = await Order.create({ userId: this.id })
-        order = await Order.findByPk(order.id, {
-            include: [LineItem]
+        order = await conn.models.order.create({ userId: this.id })
+        order = await conn.models.order.findByPk(order.id, {
+            include: [conn.models.lineItem]
         })
     }
     //console.log(order);
@@ -130,10 +103,4 @@ User.findByToken = async function findByToken(token){
     }
 }
 
-module.exports = {
-    conn, 
-    User,
-    Product,
-    Order, 
-    LineItem
-}
+module.exports = User;
