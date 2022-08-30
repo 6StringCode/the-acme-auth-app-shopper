@@ -5,6 +5,8 @@ const path = require('path');
 
 app.use(express.json());
 
+app.use('/dist', express.static('dist'));
+
 const isLoggedIn = async (req, res, next)=> {
     try{
         req.user = await User.findByToken(req.headers.authorization);
@@ -64,7 +66,7 @@ app.get('/api/sessions', isLoggedIn, async(req, res, next)=> {
 
 app.use((err, req, res, next)=> {
     console.log(err);
-    res.status(500).send({ error: err });
+    res.status(err.status || 500).send({ error: err });
 });
 
 module.exports = app;
